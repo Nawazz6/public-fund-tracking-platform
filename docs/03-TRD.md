@@ -19,7 +19,7 @@
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0.0 | 2026-09-28 | AI Engineering Agent | Initial TRD created from approved PRD v1.1.0 and FRD v1.0.1. Resolves technical design questions PDQ-02, PDQ-03, PDQ-04, PDQ-08, and FRD deferred items (FRD-DEF-01 through FRD-DEF-10). Establishes technical architectures for Client, Server, PostgreSQL data model, Solidity smart contracts, hybrid signing model, blockchain event indexer, Pinata IPFS integration, AI/ML pipeline, and local dev/test environment. |
-| 1.0.1 | 2026-09-28 | AI Engineering Agent | Targeted technical consistency correction pass: clarified AI/ML design boundary, PostgreSQL-to-blockchain identifier mapping, RFC 7807 Problem Details, PostgreSQL testing terminology, FastAPI BackgroundTasks limitations, performance target status, OpenZeppelin 5.x Ownable initialization, JWT role-change authorization behavior, and blockchain consistency wording. |
+| 1.0.1 | 2026-09-28 | AI Engineering Agent | Targeted technical consistency correction pass: clarified AI/ML design boundary, PostgreSQL-to-blockchain identifier mapping, RFC 7807 Problem Details, PostgreSQL testing terminology, FastAPI BackgroundTasks limitations, performance target status, OpenZeppelin 5.x Ownable initialization, JWT role-change authorization behavior, blockchain consistency wording, Section 2.2 AI/ML scope wording alignment, and distinct AuditFinding findingId vs. flagId on-chain identification. |
 
 ---
 
@@ -106,7 +106,7 @@ This TRD specifies:
 - Hybrid transaction signing model (Server relayer vs. browser wallet).
 - Blockchain event indexing mechanism and query acceleration.
 - Pinata IPFS evidence upload, metadata linking, and retrieval workflows.
-- Hybrid AI/ML risk scoring model (rule-based + Isolation Forest), feature engineering, explainability generation, and asynchronous execution.
+- Hybrid AI/ML risk scoring execution architecture, feature-signal interface, explainability generation, and asynchronous execution.
 - In-process scheduled deadline detection for missed milestones.
 - In-app notification processing and non-atomic lifecycle decoupling.
 - Data consistency mechanisms between relational and on-chain storage.
@@ -595,7 +595,7 @@ erDiagram
 
 #### 9. `audit_findings`
 - `id` (UUID / String, Primary Key)
-- `on_chain_id` (BIGINT, UNIQUE, NULL, Indexed) — Dedicated numeric identifier (Solidity uint256 findingId/flagId) mapped 1:1 to on-chain AuditFindingRecorded event
+- `on_chain_id` (BIGINT, UNIQUE, NULL, Indexed) — Dedicated numeric identifier (`uint256 findingId`) mapped 1:1 to the on-chain AuditFindingRecorded event.
 - `project_id` (UUID, References `projects(id)`, NOT NULL, Indexed)
 - `flag_id` (UUID, References `ai_flags(id)`, NULL)
 - `escalation_id` (UUID, NULL)
@@ -638,14 +638,28 @@ To bridge the technical identity impedance mismatch between PostgreSQL (which us
 2. **Explicit Mapping Storage in PostgreSQL:**
    - Every blockchain-addressable entity (`projects`, `milestones`, `fund_releases`, `ai_flags`, `audit_findings`) includes a dedicated `on_chain_id` column.
    - `on_chain_id` is unique, indexed, and strictly immutable once assigned.
+   - Specifically:
+     - `projects.on_chain_id` maps to blockchain `uint256 projectId`.
+     - `milestones.on_chain_id` maps to blockchain `uint256 milestoneId`.
+     - `fund_releases.on_chain_id` maps to blockchain `uint256 releaseId` (for event correlation).
+     - `ai_flags.on_chain_id` maps to blockchain `uint256 flagId`.
+     - `audit_findings.on_chain_id` maps to blockchain `uint256 findingId`.
    - Monotonically increasing numeric IDs are allocated during entity preparation (e.g. sequence-generated integer or entity-scoped sequential counter) prior to transaction submission.
 3. **Server-Side Transaction Construction:**
    - When the Server constructs a smart contract call (e.g. `createProject`, `defineMilestone`, `requestFundRelease`, `recordAIAnomaly`, `recordAuditFinding`), it queries the entity's `on_chain_id` from PostgreSQL and supplies it directly as the `uint256` argument.
+   - For `recordAuditFinding`, the transaction explicitly passes the finding's own distinct `findingId` (`audit_findings.on_chain_id`) and the associated `flagId` (`ai_flags.on_chain_id`, or `0` if originated from a Government Admin escalation rather than an AI flag).
    - The Server **never** attempts to cast, truncate, or hash UUID strings into `uint256` values.
 4. **Event Indexer Reverse Resolution:**
-   - When the blockchain event indexer captures on-chain events emitting numeric identifiers (e.g. `ProjectCreated(uint256 indexed projectId, ...)`, `MilestoneDefined(..., uint256 indexed milestoneId, ...)`, `AIAnomalyRecorded(..., uint256 indexed flagId, ...)`), it resolves the numeric on-chain ID back to the canonical PostgreSQL UUID via an indexed lookup:
+   - When the blockchain event indexer captures on-chain events emitting numeric identifiers (e.g. `ProjectCreated(uint256 indexed projectId, ...)`, `MilestoneDefined(..., uint256 indexed milestoneId, ...)`, `AIAnomalyRecorded(..., uint256 indexed flagId, ...)`, `AuditFindingRecorded(..., uint256 indexed findingId, uint256 indexed flagId, ...)`), it resolves each numeric on-chain ID back to the canonical PostgreSQL UUID independently via indexed lookups:
      ```sql
+     -- Resolve project identity:
      SELECT id FROM projects WHERE on_chain_id = :numeric_project_id;
+
+     -- Resolve AI flag identity:
+     SELECT id FROM ai_flags WHERE on_chain_id = :numeric_flag_id;
+
+     -- Resolve audit finding identity:
+     SELECT id FROM audit_findings WHERE on_chain_id = :numeric_finding_id;
      ```
    - The resolved UUID is populated into `blockchain_events.project_id` and `blockchain_events.entity_id`, ensuring accurate relational linkage in `blockchain_events`.
 
@@ -811,12 +825,14 @@ event AIAnomalyRecorded(
 
 event AuditFindingRecorded(
     uint256 indexed projectId,
+    uint256 indexed findingId,
     uint256 indexed flagId,
     address indexed auditorWallet,
     uint8 findingOutcome, // 0 = NoAction, 1 = EscalatedExternal
     string reportCid,
     uint256 timestamp
 );
+// Note: flagId refers to the associated AI anomaly flag. If the audit finding originated from a Government Admin escalation rather than an AI flag, flagId is set to 0 (representing null/unlinked by convention).
 
 event ProjectCompleted(
     uint256 indexed projectId,
@@ -863,7 +879,7 @@ event ProjectCompleted(
 6. `approveFundRelease(uint256 projectId, uint256 milestoneId, uint256 approvedAmount) external onlyOwner nonReentrant`
 7. `rejectFundRelease(uint256 projectId, uint256 milestoneId, bytes32 rejectionReasonHash) external onlyOwner`
 8. `recordAIAnomaly(uint256 projectId, uint256 flagId, uint8 riskScore, string calldata anomalyType) external onlyOwner`
-9. `recordAuditFinding(uint256 projectId, uint256 flagId, uint8 findingOutcome, string calldata reportCid) external nonReentrant`
+9. `recordAuditFinding(uint256 projectId, uint256 findingId, uint256 flagId, uint8 findingOutcome, string calldata reportCid) external nonReentrant`
 10. `completeProject(uint256 projectId) external onlyOwner`
 
 ---
