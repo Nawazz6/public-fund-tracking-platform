@@ -1152,7 +1152,7 @@ The following product-level acceptance criteria define what a successful MVP dem
 | AC-20 | Cross-role API access is rejected: e.g., ACT-04 cannot call an endpoint reserved for ACT-02; the Server returns 403. |
 | AC-21 | AI risk flags display the disclaimer: "AI risk flags indicate anomalous patterns and do not establish fraud or corruption." |
 | AC-22 | All forms display appropriate validation errors when required fields are empty or invalid, and the submission button is disabled during a pending request. |
-| AC-23 | All primary dashboard views load within 3 seconds with representative demo data under local demo conditions. |
+| AC-23 | All primary dashboard views load without perceptible delay under representative demo data and local demo conditions. No hard time limit is specified. |
 
 ---
 
@@ -1167,7 +1167,7 @@ The following product-level acceptance criteria define what a successful MVP dem
 | CR-05 | PostgreSQL stores all operational data; blockchain does not replace it | FR-080, FR-081, §15 | MOD-04, MOD-09 | System Architecture, TRD |
 | CR-06 | Six actor roles | FR-010–014, §4 | MOD-02 | FRD |
 | CR-07 | Citizen no-login; all others JWT | FR-001–006, FR-130–135 | MOD-01, MOD-14 | FRD |
-| CR-08 | End-to-end functional and demonstrable | AC-01–AC-23, NFR-09–NFR-21 | All | Testing Plan |
+| CR-08 | End-to-end functional and demonstrable | AC-01–AC-23, NFR-09–NFR-21 | All | 07-TESTING.md |
 | CR-09 | Client: modern, professional, visually polished | §14, NFR-11–NFR-15 | Client | UI/UX Design |
 | CR-10 | Documentation-first process | (this document) | N/A | FRD |
 | CR-11 | No production-scale complexity | §3 (Non-Goals) | N/A | System Architecture |
@@ -1206,11 +1206,11 @@ The following are genuinely new questions that emerged from writing this PRD. Th
 **PDQ-02 — TRD Question: Server-side missed milestone check frequency**
 *At what interval does the Server run its periodic deadline check? (e.g., every hour, every midnight)? This is a configuration decision for the TRD. The choice affects how quickly Missed/Overdue status is detected after a due date passes.*
 
-**PDQ-03 — FRD Question: AI trigger coordination with fund release approval**
-*AI analysis is triggered after a fund release is approved. Should the AI analysis run synchronously within the same request, or asynchronously (e.g., in a background task)? This has implications for API response time. The TRD should define the execution model.*
+**PDQ-03 — TRD/System Architecture Question: AI trigger coordination with fund release approval**
+*AI analysis is triggered after a fund release is approved. Should the AI analysis run synchronously within the same request, or asynchronously (e.g., in a background task)? This has implications for API response time. The TRD and System Architecture shall define the execution model.*
 
-**PDQ-04 — TRD/Blockchain Design Question: On-chain event submission actor**
-*For events that are submitted by application users (FundReleaseRequested, OfficerVerified, FundReleaseApproved, FundReleaseRejected, ProjectCreated, etc.), does the Server submit them using a platform-controlled wallet (i.e., a Server-side signer), or does each actor's connected wallet sign and submit? Only AuditFindingRecorded is explicitly confirmed as requiring the Auditor's wallet. The Blockchain Design document must clarify the signing model for all 10 events.*
+**PDQ-04 — TRD/System Architecture Question: On-chain event submission actor**
+*For events that are submitted by application users (FundReleaseRequested, OfficerVerified, FundReleaseApproved, FundReleaseRejected, ProjectCreated, etc.), does the Server submit them using a platform-controlled wallet (i.e., a Server-side signer), or does each actor's connected wallet sign and submit? Only AuditFindingRecorded is explicitly confirmed as requiring the Auditor's wallet. The TRD and System Architecture shall define the signing model for all 10 events.*
 
 **PDQ-05 — FRD Question: Government Admin project completion authorization**
 *FR-N identifies project completion as an ACT-02 or ACT-03 action "with appropriate authorization." The FRD must specify the exact rule: who can mark a project as Completed, and what conditions must be met (e.g., all milestones completed, no pending fund releases)?*
