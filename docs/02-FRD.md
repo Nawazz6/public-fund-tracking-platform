@@ -2,13 +2,13 @@
 
 **Document Type:** Functional Requirements Document (FRD)
 **Project:** AI Powered Decentralized Public Fund Tracking and Fraud Detection Platform
-**Version:** 1.0.0
+**Version:** 1.0.1
 **Status:** DRAFT — PENDING REVIEW
 **Date (created):** 2026-09-28
 **Date (last updated):** 2026-09-28
 **Author:** AI Engineering Agent
 **Source Baselines:**
-  - Project Definition v0.3.0 (`docs/PROJECT-DEFINITION.md`) — BASELINE APPROVED
+  - Project Definition v0.3.0 (`docs/00-PROJECT-DEFINITION.md`) — BASELINE APPROVED
   - PRD v1.1.0 (`docs/01-PRD.md`) — APPROVED
 
 ---
@@ -18,6 +18,7 @@
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0.0 | 2026-09-28 | AI Engineering Agent | Initial FRD created from approved PRD v1.1.0 and Project Definition v0.3.0. Resolves PDQ-01 and PDQ-05. |
+| 1.0.1 | 2026-09-28 | AI Engineering Agent | Targeted correction pass: clarified blockchain consistency and failure reporting (functional behavior without implying database/blockchain atomic commits); made Server-side AI analysis execution mandatory across all eligible triggers regardless of threshold score; clarified external escalation terminology as off-platform referrals; updated notification generation to Server workflow without atomic guarantees; reinforced explicit labeling of assumptions and deferred decisions; and clarified project completion conditions resolving PDQ-05. |
 
 ---
 
@@ -102,7 +103,7 @@ This FRD covers the functional behavior of all six actor roles across all platfo
 
 | Document | Version | Status |
 |---|---|---|
-| `docs/PROJECT-DEFINITION.md` | 0.3.0 | BASELINE APPROVED |
+| `docs/00-PROJECT-DEFINITION.md` | 0.3.0 | BASELINE APPROVED |
 | `docs/01-PRD.md` | 1.1.0 | APPROVED |
 
 ---
@@ -305,7 +306,7 @@ The platform is a web-based prototype for tracking public infrastructure project
 **Validation Rules:**
 - Full name: required, non-empty.
 - Email/username: required, unique across all accounts. Duplicate rejected.
-- Role: required, one of the four permitted values. ACT-01 cannot create another Platform Admin via this form.
+- Role: required, one of the four permitted values (ASSUMPTION / DEFERRED DECISION: FRD-ASS-06 — In the baseline application UI, Platform Admin can create Government Admin, Department Officer, Contractor, and Auditor accounts; restricting Platform Admin from creating another Platform Admin via standard UI is a baseline assumption deferred to TRD/System Architecture for administrative provisioning design).
 - Password: required; exact policy is a TRD decision.
 **Exception Flow:**
 - Duplicate email: "Email already registered."
@@ -415,8 +416,8 @@ The platform is a web-based prototype for tracking public infrastructure project
 3. ACT-03 can now view and act on the project.
 **Validation Rules:**
 - Assigned user must have Department Officer/Engineer role.
-- A project has exactly one assigned officer at a time. Re-assignment replaces the current officer.
-**ASSUMPTION:** Single officer per project for MVP.
+- A project has one assigned officer at a time in the baseline (ASSUMPTION / DEFERRED DECISION: FRD-ASS-02 — Single assigned officer per project is a baseline design assumption; multiple officer assignments are deferred to TRD/future releases). Re-assignment replaces the currently assigned officer.
+**ASSUMPTION:** Single officer per project for MVP (FRD-ASS-02).
 **Related PRD:** FR-021
 
 ---
@@ -530,7 +531,7 @@ The platform is a web-based prototype for tracking public infrastructure project
 - Expected end date: required, valid date, must be after start date.
 **Exception Flow:**
 - Any required field missing: field-level validation errors; project not created.
-- Blockchain event failure: Server logs failure, returns error to Client, does NOT create project record. See Section 27.2.
+- Blockchain event failure: Server logs failure, returns error to Client, and does NOT report the project creation as successfully completed. See Section 27.2.
 **Related PRD:** FR-020, Workflow A
 
 ---
@@ -566,9 +567,9 @@ The platform is a web-based prototype for tracking public infrastructure project
 **Actor:** ACT-02
 **Preconditions:**
 - ACT-02 is authenticated.
-- Project has status **Active**.
-- No milestones remain in Active status.
-- No fund release requests are in Pending or Under Review status.
+- Project currently has status **Active**.
+- All milestones defined for the project are resolved: no milestone remains in **Active** status (every defined milestone must have reached either **Completed** or **Missed/Overdue** status).
+- No fund release requests for the project remain unresolved: no requests in **Pending**, **Under Review**, or **Pending Admin Decision** status (all fund release requests must be in terminal status **Approved** or **Rejected**).
 **Trigger:** ACT-02 selects "Mark Project as Completed."
 **Main Flow:**
 1. Server validates all completion preconditions.
@@ -577,14 +578,16 @@ The platform is a web-based prototype for tracking public infrastructure project
 4. Project becomes read-only (no new milestones, fund releases, or progress updates).
 **Result:** Project status Completed. ProjectCompleted event anchored on blockchain.
 **Validation Rules:**
-- Any milestone still in Active status: Server rejects with a descriptive error.
-- Any fund release request Pending or Under Review: Server rejects with a descriptive error.
+- Project not in Active status: Server rejects with descriptive error.
+- Any milestone still in Active status: Server rejects with descriptive error ("All milestones must be Completed or Missed/Overdue before closing the project").
+- Any fund release request Pending, Under Review, or Pending Admin Decision: Server rejects with descriptive error ("All fund release requests must be resolved before closing the project").
 **Exception Flow:**
 - Preconditions not met: Server returns error describing which condition is not satisfied.
+- Blockchain event failure: See Section 27.2.
 
-> **DECISION (PDQ-05 resolved):** Only ACT-02 can mark a project as Completed. Required conditions: (1) no milestones in Active status; (2) no fund release requests in Pending or Under Review status. Missed/Overdue milestones do NOT block completion — they represent milestones the Government Admin accepts as part of project closure.
+> **DECISION (PDQ-05 resolved):** Only ACT-02 (Government Admin) can mark a project as Completed. Required functional conditions: (1) The project must currently be Active; (2) No milestones may remain in Active status (all milestones must be either Completed or Missed/Overdue; Missed/Overdue milestones do NOT block project completion, as the Government Admin may formally close a project with acknowledged missed/overdue milestones); (3) No fund release requests may remain active or unresolved (no requests in Pending, Under Review, or Pending Admin Decision status). Upon completion, the project status transitions to Completed in PostgreSQL, a ProjectCompleted blockchain event is anchored, and the project becomes read-only.
 
-**Related PRD:** Workflow N
+**Related PRD:** Workflow N, PDQ-05
 
 ---
 
@@ -638,7 +641,8 @@ The platform is a web-based prototype for tracking public infrastructure project
 3. Server creates a Milestone record in PostgreSQL with status **Active**.
 4. Server submits a **MilestoneDefined** blockchain event.
 5. Milestone appears in the project's milestone list.
-**Result:** Milestone record (status Active) in PostgreSQL. MilestoneDefined event anchored on blockchain.
+6. Server triggers AI risk analysis for the project (Section 19).
+**Result:** Milestone record (status Active) in PostgreSQL. MilestoneDefined event anchored on blockchain. AI risk analysis triggered.
 **Validation Rules:**
 - Milestone name: required, non-empty.
 - Deliverable description: required, non-empty.
@@ -708,7 +712,7 @@ The platform is a web-based prototype for tracking public infrastructure project
 - ACT-04 is authenticated and assigned to the project/milestone.
 - Milestone has status Active or Missed/Overdue.
 - Project has status Active.
-- No other fund release request for this milestone is currently in Pending or Under Review status.
+- No other fund release request for this milestone is currently in Pending, Under Review, or Pending Admin Decision status (ASSUMPTION: FRD-ASS-01).
 **Trigger:** ACT-04 submits the fund release request form.
 **Main Flow:**
 1. ACT-04 specifies the requested amount.
@@ -722,7 +726,7 @@ The platform is a web-based prototype for tracking public infrastructure project
 **Validation Rules:**
 - Requested amount: > 0, must not exceed milestone's remaining available budget (BR-03).
 - At least one evidence document must be attached.
-- Only one active request per milestone at a time (BR-04).
+- Only one active request per milestone at a time (ASSUMPTION: FRD-ASS-01, BR-04).
 **Exception Flow:**
 - Amount exceeds available budget: descriptive error showing remaining amount.
 - IPFS upload failure: Section 27.3.
@@ -748,7 +752,8 @@ The platform is a web-based prototype for tracking public infrastructure project
 8. Server submits an **OfficerVerified** blockchain event (including IPFS CID and recommendation outcome).
 9. Fund release status transitions to **Pending Admin Decision**.
 10. Server creates in-app notification for ACT-02.
-**Result:** OfficerVerified anchored on blockchain. Status is Pending Admin Decision. ACT-02 notified.
+11. Server triggers AI risk analysis for the project (Section 19).
+**Result:** OfficerVerified anchored on blockchain. Status is Pending Admin Decision. ACT-02 notified. AI risk analysis triggered.
 **Related PRD:** Workflows F, H
 
 ---
@@ -822,7 +827,7 @@ The platform is a web-based prototype for tracking public infrastructure project
 **Result:** Timestamped progress record stored. Latest physical progress % for the milestone updated.
 **Validation Rules:**
 - Progress %: required, numeric, 0–100 inclusive.
-- Progress % should not be less than the previous entry for the same milestone (ASSUMPTION: exact enforcement — error vs. warning — is a UX decision).
+- Progress % should not be less than the previous entry for the same milestone (ASSUMPTION / DEFERRED DECISION: FRD-ASS-04 — Baseline assumption that physical progress does not regress; whether this is enforced as a hard validation error, a soft warning, or permitted with justification is a UI/UX and TRD design decision).
 **Related PRD:** FR-060, CR-14
 
 ---
@@ -936,17 +941,16 @@ The Server submits the appropriate event for each confirmed lifecycle action:
 
 ---
 
-### FRD-CHAIN-004 — Blockchain Recording Success/Failure
+### FRD-CHAIN-004 — Blockchain Anchoring and Completion Behavior
 
 **Behavior:**
-- Lifecycle action: PostgreSQL record created → Server attempts blockchain event submission.
-- Success: lifecycle action complete; event indexed; user-facing flow continues.
-- Failure (e.g., Hardhat unavailable, transaction reverted):
-  - Server logs the failure.
-  - Server returns an error to Client.
-  - Server does NOT permanently commit the triggering PostgreSQL record in an inconsistent state (exact rollback strategy is a TRD decision).
-  - Actor may retry.
-- The system must NOT report success to the user if blockchain anchoring has failed.
+- A lifecycle action that requires blockchain anchoring must not be reported to the user as successfully completed until the required blockchain event has been confirmed.
+- If blockchain anchoring fails (e.g., local Hardhat node unavailable, transaction reverted, gas exhaustion):
+  - The Server logs the failure.
+  - The system must not present the lifecycle action as fully successful.
+  - The Server returns an error to the Client indicating that blockchain anchoring was not confirmed.
+  - The actor may retry the action.
+- Exact database/blockchain consistency, retry, reconciliation, transaction ordering, and recovery mechanisms are implementation decisions for the TRD/System Architecture. The platform does not assume literal two-phase or atomic commit across PostgreSQL and the blockchain.
 **Related PRD:** NFR-19
 
 ---
@@ -956,12 +960,16 @@ The Server submits the appropriate event for each confirmed lifecycle action:
 ### FRD-AI-001 — AI Analysis Trigger Events
 
 **Actor:** Server (automated)
-**Behavior:** AI risk analysis is triggered after:
+**Behavior:** Every eligible AI trigger event must cause the Server to execute the defined AI/risk analysis for the relevant project.
+
+The eligible triggers are:
 1. A fund release request is **approved** by ACT-02 (FRD-FREL-003).
 2. An officer verification is **submitted** by ACT-03 (FRD-FREL-002).
 3. A new milestone is **defined** by ACT-03 (FRD-MILE-001).
 
-The trigger mechanism (synchronous vs. asynchronous, background task) is a TRD/System Architecture decision (PDQ-03). Functionally: the triggering HTTP response must not be blocked for long durations by AI computation.
+The AI analysis must execute for every eligible trigger event regardless of whether the eventual risk score crosses the configured flagging threshold.
+
+The trigger and execution mechanism (synchronous vs. asynchronous, background task) is a TRD/System Architecture decision (PDQ-03). Functionally: the triggering HTTP response must not be blocked for long durations by AI computation.
 **Related PRD:** FR-091, CR-21
 
 ---
@@ -1007,13 +1015,19 @@ The trigger mechanism (synchronous vs. asynchronous, background task) is a TRD/S
 ### FRD-AI-005 — AI Flag Creation
 
 **Actor:** Server (automated)
-**Preconditions:** AI analysis triggered and completed for a project.
+**Preconditions:** AI analysis executed and completed by the Server following an eligible trigger event.
 **Behavior:**
-- If risk score exceeds the configured threshold: Server creates an **AIFlag** record in PostgreSQL (project ID, risk score, anomaly type(s), contributing factors, status **Open**, creation timestamp).
-- Server submits an **AIAnomalyRecorded** blockchain event (referencing flag ID and risk score).
-- Server creates in-app notification for ACT-05.
-- ACT-02 may view a summary of the flag in the project dashboard.
-- If risk score is below threshold: no flag created. Analysis results logged internally.
+The AI analysis produces a project risk score (0–100 integer) and contributing factors:
+- **If the risk score meets or exceeds the configured threshold:**
+  - Server creates an **AIFlag** record in PostgreSQL (project ID, risk score, anomaly type(s), contributing factors, status **Open**, creation timestamp).
+  - Server submits an **AIAnomalyRecorded** blockchain event (referencing flag ID and risk score).
+  - Server creates an in-app notification for ACT-05 (Auditor).
+  - ACT-02 may view a summary of the flag in the project dashboard.
+- **If the risk score is below the configured threshold:**
+  - No AI anomaly flag is created.
+  - The analysis result may still be internally recorded or logged where appropriate.
+  - No blockchain AIAnomalyRecorded event is submitted.
+  - No notification is sent to ACT-05.
 **Related PRD:** FR-096
 
 ---
@@ -1038,7 +1052,7 @@ AI does NOT determine guilt, wrongdoing, fraud, or corruption. All final audit c
 | Open | Flag created by AI; awaiting Auditor review. |
 | Under Review | Auditor has opened the investigation. |
 | Reviewed — No Action | Investigation complete; no further action required. |
-| Escalated Externally | Auditor has determined referral to external authorities. |
+| Escalated Externally | The platform records that the Auditor has referred/recommended the matter for handling outside this platform. NOTE: This is an internal status record; the platform does NOT integrate with external government authorities, investigation agencies, or external case-management systems. |
 
 (Full state model: Section 25.5)
 
@@ -1099,7 +1113,7 @@ AI does NOT determine guilt, wrongdoing, fraud, or corruption. All final audit c
 **Trigger:** ACT-05 submits the audit finding form.
 **Main Flow:**
 1. ACT-05 writes a detailed audit report narrative.
-2. ACT-05 selects a finding outcome: "Reviewed — No Action Required" or "Escalated to External Authorities."
+2. ACT-05 selects a finding outcome: "Reviewed — No Action Required" or "Escalated to External Authorities" (denoting referral outside the platform).
 3. ACT-05 submits the form.
 4. Server uploads the audit report to IPFS (FRD-DOC-001).
 5. Server creates an AuditFinding record in PostgreSQL: project ID, flag/escalation ID, outcome, IPFS CID, auditor user ID, timestamp.
@@ -1114,7 +1128,9 @@ AI does NOT determine guilt, wrongdoing, fraud, or corruption. All final audit c
 - Connected wallet: required.
 **Exception Flow:**
 - IPFS upload failure: ACT-05 receives error; finding not submitted; may retry.
-- Blockchain event failure: ACT-05 receives error; finding not committed; may retry.
+- Blockchain event failure: ACT-05 receives error indicating the on-chain event could not be confirmed; finding is not reported as successfully recorded; ACT-05 may retry. See Section 27.2.
+
+**Clarification on External Escalation:** Selecting "Escalated to External Authorities" records on-chain and in PostgreSQL that the Auditor has referred or recommended the matter for external handling outside this platform. The platform does NOT have an integration with an external government authority, law-enforcement agency, or external case-management system.
 **Related PRD:** FR-103, FR-104, FR-105, Workflow M
 
 ---
@@ -1127,6 +1143,8 @@ AI does NOT determine guilt, wrongdoing, fraud, or corruption. All final audit c
 - "Reviewed — No Action Required" → AIFlag/Escalation status: **Reviewed — No Action**.
 - "Escalated to External Authorities" → AIFlag/Escalation status: **Escalated Externally**.
 Both outcomes are recorded on-chain via AuditFindingRecorded.
+
+**Explicit Clarification:** The status "Escalated Externally" means the platform records that the Auditor has referred or recommended the matter for handling outside this platform. It does NOT mean the platform has an actual integration with an external government authority, investigation agency, or external case-management system.
 **Related PRD:** FR-105
 
 ---
@@ -1172,6 +1190,8 @@ Both outcomes are recorded on-chain via AuditFindingRecorded.
 ### FRD-NOTIF-001 — Notification Delivery Events
 
 All notifications are in-app only. No email or SMS.
+
+**Notification Processing Mechanics:** The relevant lifecycle action generates the appropriate in-app notification as part of the Server-side processing workflow. A failure in notification creation or delivery must not cause an otherwise valid lifecycle action to fail or be considered unsuccessful. Exact database transaction handling, retry behavior, and delivery mechanics are implementation decisions deferred to the TRD/System Architecture.
 
 | Event | Notification Recipient(s) | Triggering FRD |
 |---|---|---|
@@ -1256,7 +1276,7 @@ Any ACT-06 access to excluded data constitutes a functional defect.
 ### FRD-CIT-005 — Published Audit Summary
 
 **Actor:** ACT-02 (publisher), ACT-06 (viewer)
-**ASSUMPTION:** ACT-02 explicitly selects a completed AuditFinding record and marks it as "Publish to Public Portal." The published summary shows the finding outcome (not full internal details). Exact fields and the publish mechanism are a UI/UX Design decision.
+**ASSUMPTION / DEFERRED DECISION (FRD-ASS-05):** ACT-02 explicitly selects a completed AuditFinding record and marks it as "Publish to Public Portal." The published summary shows the finding outcome (not full internal details). The exact publishing mechanism, approval gates, and display criteria are design assumptions deferred to UI/UX Design and TRD.
 **Behavior:** When ACT-02 marks a finding as published, it becomes visible on the project's public portal page. Unpublished audit findings are not visible to ACT-06.
 **Related PRD:** FR-134
 
@@ -1312,7 +1332,7 @@ Any ACT-06 access to excluded data constitutes a functional defect.
 | State | Meaning | Allowed Transitions | Actor / Trigger |
 |---|---|---|---|
 | Draft | Project created; budget and officer assignment pending. | → Active | ACT-02 completes budget allocation and officer assignment |
-| Active | Project running; milestones, releases, and progress updates accepted. | → Completed | ACT-02 marks complete (FRD-PROJ-004) |
+| Active | Project running; milestones, releases, and progress updates accepted. | → Completed | ACT-02 marks complete (FRD-PROJ-004; project Active, no Active milestones [all Completed or Missed/Overdue], no unresolved fund releases [no Pending, Under Review, or Pending Admin Decision]) |
 | Completed | All lifecycle actions complete; project is read-only. | (terminal) | — |
 
 ---
@@ -1351,7 +1371,7 @@ Any ACT-06 access to excluded data constitutes a functional defect.
 | Under Review | ACT-05 investigating. | → Reviewed — No Action | ACT-05 records finding (FRD-AUD-004) |
 | Under Review | ACT-05 investigating. | → Escalated Externally | ACT-05 records finding (FRD-AUD-004) |
 | Reviewed — No Action | Investigation complete; no further action. | (terminal; record retained) | — |
-| Escalated Externally | Referred to external authorities. | (terminal; record retained) | — |
+| Escalated Externally | Recorded as referred/recommended for handling outside this platform (no automated external integration exists). | (terminal; record retained) | — |
 
 ---
 
@@ -1363,7 +1383,7 @@ Any ACT-06 access to excluded data constitutes a functional defect.
 | Under Review | ACT-05 investigating. | → Reviewed — No Action | ACT-05 records finding (FRD-AUD-004) |
 | Under Review | ACT-05 investigating. | → Escalated Externally | ACT-05 records finding (FRD-AUD-004) |
 | Reviewed — No Action | Investigation complete. | (terminal; record retained) | — |
-| Escalated Externally | Referred to external authorities. | (terminal; record retained) | — |
+| Escalated Externally | Recorded as referred/recommended for handling outside this platform (no automated external integration exists). | (terminal; record retained) | — |
 
 ---
 
@@ -1376,17 +1396,17 @@ Any ACT-06 access to excluded data constitutes a functional defect.
 | BR-01 | Financial utilization % = (sum of approved fund releases for project ÷ total project budget) × 100. Computed from fund release records; always consistent with underlying data. |
 | BR-02 | A milestone's budget portion may not cause the sum of all milestone budget portions for a project to exceed the project's total budget. |
 | BR-03 | A fund release request amount must not exceed the milestone's remaining available budget (milestone budget portion minus sum of all approved releases for that milestone). |
-| BR-04 | Only one active fund release request per milestone at a time (no Pending or Under Review request may exist when a new one is submitted). |
+| BR-04 | Only one active fund release request per milestone at a time (ASSUMPTION: FRD-ASS-01 — no Pending, Under Review, or Pending Admin Decision request may exist when a new one is submitted; whether concurrent requests are permitted is deferred to TRD/System Architecture). |
 | BR-05 | All rejected fund release request records are permanent. Never deleted, hidden, or modified after rejection. |
 | BR-06 | Physical progress % and financial utilization % are separate data streams with separate update mechanisms. Must be displayed as distinct values throughout all views. |
 | BR-07 | Milestone completion (status = Completed) requires explicit ACT-03 action; not derived automatically from any financial or progress event. |
 | BR-08 | Missed/Overdue milestone status is determined by the Server's periodic deadline check, not by AI or manual action. |
-| BR-09 | A project may only be marked Completed by ACT-02 when: (a) no milestones remain in Active status, and (b) no fund release requests are in Pending or Under Review status. |
+| BR-09 | A project may only be marked Completed by ACT-02 when: (a) project is currently Active, (b) no milestones remain in Active status (all milestones are Completed or Missed/Overdue; Missed/Overdue milestones do not block completion), and (c) no fund release requests remain unresolved (no requests in Pending, Under Review, or Pending Admin Decision status). |
 | BR-10 | AI risk flags do not determine guilt, fraud, corruption, or wrongdoing. The AI disclaimer must appear on all AI result views. All final audit decisions are made by ACT-05. |
 | BR-11 | Escalation requires a non-empty reason from ACT-02. |
 | BR-12 | Audit finding requires a non-empty narrative and an explicit outcome from ACT-05. |
 | BR-13 | Public Citizen portal must not expose user account data, contractor identity, IPFS evidence links, AI flag details, or internal workflow data. |
-| BR-14 | A lifecycle action must not be reported as successful if the corresponding required blockchain event has not been committed. |
+| BR-14 | A lifecycle action that requires blockchain anchoring must not be reported to the user as successfully completed until the required blockchain event has been confirmed. If blockchain anchoring fails, the system must not present the lifecycle action as fully successful. Exact database/blockchain consistency, retry, and recovery mechanisms are deferred to the TRD/System Architecture. |
 | BR-15 | Documents on IPFS are unencrypted. This limitation is displayed as a notice wherever document upload or access occurs. |
 
 ---
@@ -1413,7 +1433,7 @@ Any ACT-06 access to excluded data constitutes a functional defect.
 | VR-16 | Physical progress % | Required, numeric, 0–100 inclusive. |
 | VR-17 | Escalation reason | Required, non-empty string. |
 | VR-18 | Audit report narrative | Required, non-empty string. |
-| VR-19 | Audit finding outcome | Required, one of: "Reviewed — No Action Required", "Escalated to External Authorities". |
+| VR-19 | Audit finding outcome | Required, one of: "Reviewed — No Action Required", "Escalated to External Authorities" (denoting off-platform referral; no automated external integration exists). |
 | VR-20 | Document file type | Must be one of the approved MIME types (exact list is a TRD decision; at minimum: PDF, JPEG, PNG). |
 
 ---
@@ -1433,12 +1453,12 @@ Any ACT-06 access to excluded data constitutes a functional defect.
 ### 27.2 Blockchain Transaction Failure
 
 **Behavior:**
-- Server logs the failure.
-- Lifecycle action is NOT committed to PostgreSQL as successful.
-- Server returns error to Client.
-- Client displays: "Blockchain event could not be recorded. Please try again."
-- Actor may retry.
-- Exact rollback/retry strategy is a TRD decision.
+- The Server logs the failure.
+- If blockchain anchoring fails, the system must not present the lifecycle action as fully successful.
+- The Server returns an error to the Client.
+- The Client displays: "Blockchain event could not be recorded. The action was not completed successfully. Please try again."
+- The actor may retry the action.
+- Exact database/blockchain consistency, transaction ordering, retry, reconciliation, and recovery mechanisms are implementation decisions deferred to the TRD/System Architecture.
 
 ---
 
@@ -1465,7 +1485,7 @@ Any ACT-06 access to excluded data constitutes a functional defect.
 ### 27.5 Duplicate or Blocked Submission
 
 **Behavior:**
-- Active fund release request already exists for the milestone: "A fund release request is already active for this milestone. Wait for the current request to be resolved before resubmitting."
+- Active fund release request already exists for the milestone (ASSUMPTION: FRD-ASS-01): "A fund release request is already active for this milestone. Wait for the current request to be resolved before resubmitting."
 - Duplicate email on user creation: "This email address is already registered."
 
 ---
@@ -1504,7 +1524,7 @@ Every API endpoint, for every module, enforces role-based access control at the 
 
 ### FRD-CROSS-002 — Blockchain Event Required for Lifecycle Actions
 
-All ten confirmed lifecycle actions that produce on-chain events must succeed in both PostgreSQL record creation AND blockchain event anchoring. The actor must not see a success message when blockchain anchoring has failed. Atomicity and rollback mechanism is a TRD decision.
+A lifecycle action that requires blockchain anchoring must not be reported to the user as successfully completed until the required blockchain event has been confirmed. If blockchain anchoring fails, the system must not present the lifecycle action as fully successful. Exact database/blockchain consistency, retry, reconciliation, transaction ordering, and recovery mechanisms are implementation decisions deferred to the TRD/System Architecture. The platform does not imply that PostgreSQL updates and blockchain transactions are literally committed atomically.
 
 ---
 
@@ -1532,9 +1552,9 @@ All rejected fund release request records are permanent and must appear in the f
 
 ---
 
-### FRD-CROSS-007 — Notifications Generated Atomically
+### FRD-CROSS-007 — Notification Generation in Lifecycle Workflows
 
-In-app notifications are generated as part of the same Server-side processing step as the triggering lifecycle action. Notification failures must be logged but must not cause the triggering lifecycle action to fail.
+The relevant lifecycle action generates the appropriate in-app notification as part of the Server-side processing workflow. A notification failure must not cause an otherwise valid lifecycle action to be considered unsuccessful. Exact database transaction handling, retry behavior, and implementation mechanics are deferred to the TRD/System Architecture (no literal transaction atomicity guarantee between lifecycle actions and notifications is implied).
 
 ---
 
@@ -1644,7 +1664,7 @@ In-app notifications are generated as part of the same Server-side processing st
 | PDQ | Question | Resolution |
 |---|---|---|
 | PDQ-01 | Milestone completion trigger | Resolved: FRD-MILE-004. Explicit ACT-03 action. Not auto-triggered by financial events. |
-| PDQ-05 | Project completion authorization | Resolved: FRD-PROJ-004. ACT-02 only. Conditions: no Active milestones, no Pending/Under Review fund releases. |
+| PDQ-05 | Project completion authorization and conditions | Resolved: FRD-PROJ-004. Authorized actor: ACT-02 only. Explicit functional completion conditions: project must be Active, no milestones remain Active (all are Completed or Missed/Overdue; Missed/Overdue milestones do not block closure), and no fund release requests remain unresolved (no Pending, Under Review, or Pending Admin Decision requests). |
 
 ---
 
@@ -1665,20 +1685,22 @@ In-app notifications are generated as part of the same Server-side processing st
 
 ---
 
-### 30.3 FRD-Level Assumptions Requiring Review
+### 30.3 FRD-Level Assumptions and Deferred Decisions Requiring Review
 
-| ID | Assumption | Impact if Wrong |
-|---|---|---|
-| FRD-ASS-01 | Only one active fund release request per milestone at a time (BR-04). | If concurrent requests are intended, fund release workflow requires revision. |
-| FRD-ASS-02 | Single assigned officer (ACT-03) per project. | If multiple officers are needed, assignment model and notification targeting require revision. |
-| FRD-ASS-03 | Budget allocation and project creation may be a combined action or two-step confirmation. | UI/UX Design and TRD must confirm the exact flow. |
-| FRD-ASS-04 | Physical progress % should not regress; exact enforcement (error vs. warning) is a UX decision. | UI/UX Design must confirm. |
-| FRD-ASS-05 | Published audit summary mechanism: ACT-02 explicitly marks an AuditFinding as "Publish to Public Portal." | If mechanism differs, public portal and ACT-02 views require revision. |
-| FRD-ASS-06 | Platform Admin cannot create another Platform Admin via the standard user creation form. | If multiple Platform Admins are needed, user creation flow requires revision. |
+The following design choices are explicitly designated as functional assumptions and deferred decisions rather than immutable product requirements. They establish the operational baseline for MVP and require confirmation in TRD, System Architecture, or UI/UX Design before implementation.
+
+| ID | Assumption / Deferred Decision | Status & Baseline Context | Impact if Modified |
+|---|---|---|---|
+| FRD-ASS-01 | Only one active fund release request per milestone at a time (BR-04). | Functional Assumption (baseline restriction against concurrent Pending/Under Review/Pending Admin Decision requests). | If concurrent requests are intended, fund release workflow and concurrency controls require revision in TRD. |
+| FRD-ASS-02 | Single assigned officer (ACT-03) per project. | Functional Assumption (1:1 project-to-officer assignment baseline). | If multiple officers or engineering teams are needed, assignment model and notification routing require revision. |
+| FRD-ASS-03 | Budget allocation and project creation may be a combined action or two-step confirmation. | Deferred Design Decision (workflow sequence). | UI/UX Design and TRD must confirm whether allocation is bundled into creation or remains a distinct step. |
+| FRD-ASS-04 | Physical progress % should not regress (decrease from previous entry). | Functional Assumption (monotonic progress baseline). | UI/UX Design and TRD must confirm exact enforcement mechanism (hard validation error vs. soft warning vs. justification note). |
+| FRD-ASS-05 | Published audit summary mechanism: ACT-02 explicitly marks an AuditFinding as "Publish to Public Portal." | Functional Assumption (explicit publishing gate for public portal). | If publishing mechanism or authority differs, public portal and Government Admin workflows require revision in TRD. |
+| FRD-ASS-06 | Platform Admin cannot create another Platform Admin via the standard user creation form. | Functional Assumption (standard user creation UI restriction). | If multiple Platform Admins or bootstrap creation is required, administrative provisioning design must be defined in TRD. |
 
 ---
 
-*End of Document — FRD v1.0.0*
+*End of Document — FRD v1.0.1*
 
 *This FRD is based on the approved Project Definition v0.3.0 and PRD v1.1.0. It is a draft pending review. No application code, scaffolding, or dependency installation shall begin until the subsequent TRD is approved.*
 
