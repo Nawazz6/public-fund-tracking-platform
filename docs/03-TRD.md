@@ -2,8 +2,8 @@
 
 **Document Type:** Technical Requirements Document (TRD)  
 **Project:** AI Powered Decentralized Public Fund Tracking and Fraud Detection Platform  
-**Version:** 1.0.0  
-**Status:** DRAFT — PENDING REVIEW  
+**Version:** 1.0.1  
+**Status:** DRAFT — FINAL REVIEW  
 **Date (created):** 2026-09-28  
 **Date (last updated):** 2026-09-28  
 **Author:** AI Engineering Agent  
@@ -19,6 +19,7 @@
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | 1.0.0 | 2026-09-28 | AI Engineering Agent | Initial TRD created from approved PRD v1.1.0 and FRD v1.0.1. Resolves technical design questions PDQ-02, PDQ-03, PDQ-04, PDQ-08, and FRD deferred items (FRD-DEF-01 through FRD-DEF-10). Establishes technical architectures for Client, Server, PostgreSQL data model, Solidity smart contracts, hybrid signing model, blockchain event indexer, Pinata IPFS integration, AI/ML pipeline, and local dev/test environment. |
+| 1.0.1 | 2026-09-28 | AI Engineering Agent | Targeted technical consistency correction pass: clarified AI/ML design boundary, PostgreSQL-to-blockchain identifier mapping, RFC 7807 Problem Details, PostgreSQL testing terminology, FastAPI BackgroundTasks limitations, performance target status, OpenZeppelin 5.x Ownable initialization, JWT role-change authorization behavior, and blockchain consistency wording. |
 
 ---
 
@@ -74,8 +75,8 @@
 ### 1.1 Identification
 - **Document Title:** Technical Requirements Document (TRD)
 - **Document File:** `docs/03-TRD.md`
-- **Document Version:** 1.0.0
-- **Release Status:** DRAFT — PENDING REVIEW
+- **Document Version:** 1.0.1
+- **Release Status:** DRAFT — FINAL REVIEW
 - **Author:** AI Engineering Agent
 - **Target Audience:** Engineering team, academic evaluators, and downstream AI implementation agents.
 
@@ -149,7 +150,7 @@ public-fund-tracking-platform/
 
 ### 3.3 Core Technical Constraints
 - **Single-Machine Evaluation (CR-01):** The entire system (Client, Server, PostgreSQL, Hardhat local node) must run and be fully demonstrable on a single developer laptop without external server dependencies, except for Pinata IPFS API calls.
-- **Non-Atomic Distributed State (CR-02):** PostgreSQL and the blockchain cannot be committed within a literal two-phase commit transaction. The Server orchestrates lifecycle actions so that a state change requiring on-chain anchoring is only reported as successful to the actor once the blockchain transaction has been confirmed.
+- **Non-Atomic Distributed State (CR-02):** PostgreSQL and the blockchain cannot be committed within a literal two-phase commit transaction. System consistency is maintained through a coordinated workflow and confirmation-based finalization protocol: a lifecycle state transition requiring on-chain anchoring is only finalized in PostgreSQL and presented as successful to the actor after the required blockchain transaction has been confirmed on-chain.
 - **Independent Auth Boundaries (CR-03):** Application identity is managed via JWT. Browser wallet connection is decoupled and required only for specific on-chain writing operations (Contractor fund release request submission and Auditor finding submission).
 - **Human-in-the-Loop AI (CR-04):** The AI module generates risk scores and anomaly explanations; it never freezes funds, halts workflows, or declares legal fraud. All final audit determinations are human decisions made by the Auditor (ACT-05).
 
@@ -426,7 +427,9 @@ FastAPI lifespan context manager handles graceful startup and shutdown within th
 ### 8.2 JWT Issuance and Claims Contract
 - **Algorithm:** HMAC-SHA256 (`HS256`).
 - **Signing Secret:** Loaded from `JWT_SECRET_KEY` environment variable (minimum 256-bit entropy).
-- **Token Expiry (Technical Decision TD-04 / FRD-DEF-04):** Set to 60 minutes (`ACCESS_TOKEN_EXPIRE_MINUTES=60`). Refresh token complexity is omitted for this academic prototype; expired tokens require user re-authentication.
+- **Token Expiry and Role Enforcement (Technical Decision TD-04 / PDQ-08 / FRD-DEF-04):**
+  - Token lifetime is set to 60 minutes (`ACCESS_TOKEN_EXPIRE_MINUTES=60`). Upon token expiration, the user must re-authenticate (refresh token complexity is omitted for this academic prototype).
+  - **Immediate Role-Change Enforcement (PDQ-08 Resolution):** While the JWT carries identity claims (`sub`, `email`, `role`, `name`), the Server remains the authoritative authorization boundary and does **not** rely solely on the static `role` claim inside the token. On every protected request, Server authentication dependencies (`get_current_user` / `require_role`) validate the user's active status (`is_active == True`) and current role directly against PostgreSQL. Consequently, if a Platform Admin changes a user's role or deactivates an account, the modification takes effect immediately on the very next authorized request even if the user's current JWT has not expired. No complex token revocation/blacklist infrastructure (e.g. Redis blocklist) is required for this prototype.
 - **Payload Claims Schema:**
   ```json
   {
@@ -441,7 +444,7 @@ FastAPI lifespan context manager handles graceful startup and shutdown within th
   ```
 
 ### 8.3 Server-Side Authorization Boundary (RBAC)
-Authorization is strictly evaluated server-side on every API call. Client route guards are UX helpers only.
+Authorization is strictly evaluated server-side on every protected API call using the user record dynamically resolved from PostgreSQL. Client route guards are UX helpers only. Token claims authenticate user identity, while authoritative permissions are evaluated against the freshly verified database state.
 The six roles map directly to server-side permissions:
 
 | Actor Code | Role Name | System Permissions |
@@ -495,6 +498,7 @@ erDiagram
 
 #### 2. `projects`
 - `id` (UUID / String, Primary Key)
+- `on_chain_id` (BIGINT, UNIQUE, NULL, Indexed) — Dedicated numeric identifier (Solidity uint256 projectId) mapped 1:1 to on-chain state
 - `project_code` (VARCHAR(50), UNIQUE, NOT NULL, Indexed)
 - `name` (VARCHAR(255), NOT NULL)
 - `description` (TEXT, NOT NULL)
@@ -513,6 +517,7 @@ erDiagram
 
 #### 3. `milestones`
 - `id` (UUID / String, Primary Key)
+- `on_chain_id` (BIGINT, UNIQUE, NULL, Indexed) — Dedicated numeric identifier (Solidity uint256 milestoneId) mapped 1:1 to on-chain state
 - `project_id` (UUID, References `projects(id)`, NOT NULL, Indexed)
 - `name` (VARCHAR(255), NOT NULL)
 - `deliverable_description` (TEXT, NOT NULL)
@@ -535,6 +540,7 @@ erDiagram
 
 #### 5. `fund_releases`
 - `id` (UUID / String, Primary Key)
+- `on_chain_id` (BIGINT, UNIQUE, NULL, Indexed) — Dedicated numeric identifier (Solidity uint256 releaseId) for on-chain event correlation
 - `project_id` (UUID, References `projects(id)`, NOT NULL, Indexed)
 - `milestone_id` (UUID, References `milestones(id)`, NOT NULL, Indexed)
 - `contractor_id` (UUID, References `users(id)`, NOT NULL)
@@ -576,6 +582,7 @@ erDiagram
 
 #### 8. `ai_flags`
 - `id` (UUID / String, Primary Key)
+- `on_chain_id` (BIGINT, UNIQUE, NULL, Indexed) — Dedicated numeric identifier (Solidity uint256 flagId) mapped 1:1 to on-chain AIAnomalyRecorded event
 - `project_id` (UUID, References `projects(id)`, NOT NULL, Indexed)
 - `trigger_event_type` (VARCHAR(50), NOT NULL)
 - `risk_score` (INTEGER, NOT NULL, Check: `risk_score >= 0 AND risk_score <= 100`)
@@ -588,6 +595,7 @@ erDiagram
 
 #### 9. `audit_findings`
 - `id` (UUID / String, Primary Key)
+- `on_chain_id` (BIGINT, UNIQUE, NULL, Indexed) — Dedicated numeric identifier (Solidity uint256 findingId/flagId) mapped 1:1 to on-chain AuditFindingRecorded event
 - `project_id` (UUID, References `projects(id)`, NOT NULL, Indexed)
 - `flag_id` (UUID, References `ai_flags(id)`, NULL)
 - `escalation_id` (UUID, NULL)
@@ -619,6 +627,27 @@ erDiagram
 - `link_url` (VARCHAR(255), NULL)
 - `is_read` (BOOLEAN, DEFAULT FALSE, NOT NULL, Indexed)
 - `created_at` (TIMESTAMPTZ, DEFAULT NOW(), NOT NULL)
+
+### 9.3 PostgreSQL ID ↔ Blockchain ID Mapping Architecture
+
+To bridge the technical identity impedance mismatch between PostgreSQL (which uses UUID string primary keys for scalable relational querying and application identity) and Solidity smart contracts (which require numeric `uint256` identifiers for gas efficiency and EVM compatibility), the platform establishes an explicit, unambiguous mapping architecture:
+
+1. **Authoritative Identity Separation:**
+   - **PostgreSQL UUID (`id`):** Primary authoritative identity layer for all application routing, relational foreign keys, domain entity management, and Client API communication.
+   - **Blockchain Numeric ID (`on_chain_id`):** Numeric identifier (`BIGINT` in PostgreSQL, `uint256` in Solidity) used strictly for smart contract invocations and on-chain event emission.
+2. **Explicit Mapping Storage in PostgreSQL:**
+   - Every blockchain-addressable entity (`projects`, `milestones`, `fund_releases`, `ai_flags`, `audit_findings`) includes a dedicated `on_chain_id` column.
+   - `on_chain_id` is unique, indexed, and strictly immutable once assigned.
+   - Monotonically increasing numeric IDs are allocated during entity preparation (e.g. sequence-generated integer or entity-scoped sequential counter) prior to transaction submission.
+3. **Server-Side Transaction Construction:**
+   - When the Server constructs a smart contract call (e.g. `createProject`, `defineMilestone`, `requestFundRelease`, `recordAIAnomaly`, `recordAuditFinding`), it queries the entity's `on_chain_id` from PostgreSQL and supplies it directly as the `uint256` argument.
+   - The Server **never** attempts to cast, truncate, or hash UUID strings into `uint256` values.
+4. **Event Indexer Reverse Resolution:**
+   - When the blockchain event indexer captures on-chain events emitting numeric identifiers (e.g. `ProjectCreated(uint256 indexed projectId, ...)`, `MilestoneDefined(..., uint256 indexed milestoneId, ...)`, `AIAnomalyRecorded(..., uint256 indexed flagId, ...)`), it resolves the numeric on-chain ID back to the canonical PostgreSQL UUID via an indexed lookup:
+     ```sql
+     SELECT id FROM projects WHERE on_chain_id = :numeric_project_id;
+     ```
+   - The resolved UUID is populated into `blockchain_events.project_id` and `blockchain_events.entity_id`, ensuring accurate relational linkage in `blockchain_events`.
 
 ---
 
@@ -802,7 +831,14 @@ event ProjectCompleted(
 
 ### 12.1 Contract Specification (`PublicFundTracker.sol`)
 - **Solidity Version:** `^0.8.20`
-- **Inheritance:** `Ownable` (from OpenZeppelin), `ReentrancyGuard` (from OpenZeppelin).
+- **Inheritance:** `Ownable` (from OpenZeppelin Contracts 5.x), `ReentrancyGuard` (from OpenZeppelin Contracts 5.x).
+- **OpenZeppelin 5.x Ownable Constructor Requirement:** In OpenZeppelin Contracts 5.x, the parameterless `Ownable()` constructor has been removed. The contract must explicitly initialize Ownable with the initial owner address:
+  ```solidity
+  constructor(address initialOwner) Ownable(initialOwner) {
+      // contract initialization logic
+  }
+  ```
+  During deployment via Hardhat scripts, the deployer account (Platform Relayer / Account #0) is supplied as `initialOwner`.
 - **Core Storage Data Structures:**
   ```solidity
   struct ProjectRecord {
@@ -868,12 +904,12 @@ flowchart LR
 
 ### 13.3 Server Relayer Signing Workflow (System & Administrative Events)
 1. Actor (ACT-02 or ACT-03) triggers lifecycle action via Server API (e.g. `FundReleaseApproved`).
-2. Server validates preconditions and prepares database transition.
+2. Server validates preconditions and stages prepared transition in PostgreSQL.
 3. Server loads relayer account private key from `BLOCKCHAIN_SIGNER_PRIVATE_KEY` environment variable.
-4. Server builds, signs, and broadcasts the contract call via Web3.py.
-5. Server waits synchronously for transaction receipt (1 block confirmation, < 2 sec on Hardhat).
-6. If transaction succeeds: Server commits PostgreSQL state and marks action complete.
-7. If transaction reverts/fails: Server logs error, aborts state transition, and returns descriptive error to Client. The action is never reported as successful.
+4. Server builds, signs, and broadcasts the contract call via Web3.py using the entity's numeric `on_chain_id`.
+5. Server waits for transaction receipt confirmation (1 block confirmation, < 2 sec on Hardhat).
+6. If transaction succeeds: Server finalizes PostgreSQL state, indexes the event, and marks action complete.
+7. If transaction reverts/fails: Server rolls back staged transition, logs diagnostic error details, and returns descriptive error to Client. The lifecycle operation is never presented as successful without verified on-chain confirmation.
 
 ---
 
@@ -927,11 +963,12 @@ The Client never directly calls the Ethereum JSON-RPC endpoint to reconstruct hi
 
 ## 16. AI/ML Technical Requirements
 
-### 16.1 Five Confirmed Detection Capabilities
+### 16.1 Five Confirmed Detection Capabilities (Technical Boundary)
+The AI module is an in-process Python component executing within the Server process. It implements a hybrid architecture combining deterministic rule-based checks with unsupervised machine learning (Isolation Forest) across five confirmed detection capabilities:
 
 ```mermaid
 flowchart TD
-    subgraph Inputs ["Input Feature Aggregation"]
+    subgraph Inputs ["Input Feature Aggregation (PostgreSQL)"]
         F1["Financial Utilization % vs<br/>Physical Progress %"]
         F2["Spend Rate vs Remaining<br/>Timeline (Burn Rate)"]
         F3["Overdue / Missed<br/>Milestone Count"]
@@ -939,7 +976,7 @@ flowchart TD
         F5["Transaction Velocity &<br/>Disbursement Amounts"]
     end
 
-    subgraph Detectors ["Detection Algorithms"]
+    subgraph Detectors ["Detection Processing"]
         R1["Rule AI-CAP-01<br/>Progress Mismatch"]
         R2["Rule AI-CAP-02<br/>Budget Overrun"]
         R3["Rule AI-CAP-03<br/>Schedule Delay"]
@@ -947,8 +984,8 @@ flowchart TD
         IF["Isolation Forest AI-CAP-05<br/>Unsupervised Anomaly Model"]
     end
 
-    subgraph Aggregator ["Scoring & Explainability Engine"]
-        WeightedSum["Weighted Score Calculator<br/>(Range: 0 - 100)"]
+    subgraph Aggregator ["Scoring & Explainability Interface"]
+        WeightedSum["Composite Risk Score<br/>(Range: 0 - 100)"]
         ExplainEngine["Contributing Factor Generator<br/>(Human-Readable Narratives)"]
     end
 
@@ -967,38 +1004,51 @@ flowchart TD
     WeightedSum --> ExplainEngine
 ```
 
-### 16.2 Feature Vector & Mathematical Specification
+### 16.2 Technical Interface and Input Feature Signals
+The Server extracts the following raw feature signals from PostgreSQL prior to running analysis:
 
-| Feature Code | Name | Definition & Formula | Sub-Score Range |
+| Feature Signal | Name | Technical Data Source & Description | Range / Unit |
 |---|---|---|---|
-| f_1 | Utilization-Progress Mismatch | S_1 = min(100, max(0, UtilizationPct - PhysicalProgressPct) * 1.25) | 0–100 |
-| f_2 | Budget Overrun Trajectory | S_2 = min(100, max(0, (Disbursed / Budget) - (ElapsedDays / TotalDays)) * 100) | 0–100 |
-| f_3 | Schedule Delay Risk | S_3 = min(100, (Count of Missed Milestones) * 35) | 0–100 |
-| f_4 | Invoice Similarity Score | S_4 = (Max Levenshtein / Token Similarity against prior invoices) * 100 | 0–100 |
-| f_5 | Isolation Forest Anomaly | S_5 = Normalized Decision Function Score from scikit-learn (0 to 100) | 0–100 |
+| $f_1$ | Progress Mismatch Signal | Difference between cumulative financial utilization % and physical progress % from `project_progress` and `fund_releases`. | Percentage delta |
+| $f_2$ | Budget Overrun Trajectory | Disbursed amount trajectory relative to elapsed project calendar timeline from `projects` and `milestones`. | Ratio / Trajectory |
+| $f_3$ | Schedule Delay Risk | Cumulative count and duration of `Missed/Overdue` milestones from `milestones`. | Integer count |
+| $f_4$ | Invoice Similarity Metric | Text/metadata similarity metric between submitted invoice and prior milestone invoices from `documents`. | Normalized index |
+| $f_5$ | Multi-Feature Anomaly Signal | Scaled multi-dimensional vector (amounts, frequencies, velocity) evaluated by Isolation Forest. | Normalized score |
 
-### 16.3 Composite Score Calculation & Weightings (Technical Decision TD-07 / FRD-DEF-09)
+> **Technical Boundary Note (FRD-DEF-09 Delegation):**  
+> The exact mathematical formulas, normalization bounds, feature engineering transformations, and synthetic data preprocessing pipelines are **intentionally deferred to the dedicated AI/ML Design stage (`docs/AI-ML-DESIGN.md`)**. They will be evaluated and tuned using the approved synthetic/semi-synthetic dataset (`data/synthetic_transactions.csv`) and the validation-based calibration approach established in the Project Definition (§14, §19).
 
-The final composite risk score R (integer from 0 to 100) is computed as:
-```text
-R = min(100, round(0.30 * S_1 + 0.20 * S_2 + 0.20 * S_3 + 0.15 * S_4 + 0.15 * S_5))
-```
-- **Threshold Flagging:** Configurable via `AI_RISK_THRESHOLD` (default: **65**).
-  - If R >= 65: Creates AIFlag (status Open), emits AIAnomalyRecorded blockchain event, routes in-app alert to Auditor.
-  - If R < 65: Records analysis log internally; no flag created, no on-chain write, no notification.
+### 16.3 Composite Risk Score & Configurable Threshold Contract
+- **Score Interface:** The AI module produces an integer composite risk score $R$ strictly within the range **0 to 100**.
+- **Scoring Architecture:** $R$ synthesizes signals from deterministic rules ($f_1$ through $f_4$) with the unsupervised Isolation Forest decision score ($f_5$). Detailed feature weighting coefficients and score blending calibration are deferred to the AI/ML Design stage (`FRD-DEF-09`).
+- **Configurable Risk Threshold:**
+  - The threshold for triggering an anomaly flag is configuration-driven via `AI_RISK_THRESHOLD` in `.env` (baseline demonstration default: `65`, with precise empirical calibration deferred to AI/ML Design).
+  - **When $R \ge \text{AI\_RISK\_THRESHOLD}$:**
+    1. Creates an `ai_flags` record with status `Open`.
+    2. Triggers on-chain transaction emitting `AIAnomalyRecorded(projectId, flagId, riskScore, anomalyType, timestamp)`.
+    3. Generates in-app alert notification routed to the Auditor (ACT-05).
+  - **When $R < \text{AI\_RISK\_THRESHOLD}$:**
+    - Analysis results are recorded in internal diagnostic logs only.
+    - No `ai_flags` record is created.
+    - No blockchain transaction is submitted.
+    - No notification is dispatched.
+- **Threshold Flexibility:** The threshold is treated as a runtime configuration parameter rather than an immutable hardcoded constant, ensuring empirical calibration without modifying application code.
 
-### 16.4 Isolation Forest Configuration & Offline Training
-- **Algorithm:** `sklearn.ensemble.IsolationForest`
-- **Hyperparameters:**
-  - `n_estimators`: 100
-  - `contamination`: 0.08 (calibrated baseline for synthetic public works data)
-  - `max_samples`: 'auto'
-  - `random_state`: 42
-- **Training Strategy:** Pre-trained on `data/synthetic_transactions.csv` using script `ml/train_isolation_forest.py`.
-- **Model Artifact:** Serialized via `joblib.dump()` to `ml/models/isolation_forest.joblib`. Loaded once at FastAPI application startup into memory.
+### 16.4 Isolation Forest Technical Integration & Artifact Loading
+- **Algorithm Implementation:** Python `sklearn.ensemble.IsolationForest` executed in-process.
+- **Hyperparameters and Training Boundary (FRD-DEF-09 Delegation):**
+  - Model hyperparameters (such as `n_estimators`, `contamination`, `max_samples`, and `random_state`), training scripts (`ml/train_isolation_forest.py`), cross-validation splits, and performance metrics are **deferred to the AI/ML Design stage**.
+  - Training will be conducted offline against `data/synthetic_transactions.csv` using the validation-based calibration methodology specified in the Project Definition.
+- **Model Artifact Management:**
+  - Serialized model artifact is stored at `ml/models/isolation_forest.joblib` via `joblib.dump()`.
+  - Loaded into Server memory **once** during FastAPI application startup lifespan.
+  - Inference is executed strictly in evaluation mode (`model.score_samples()` / `model.predict()`).
+- **Graceful Failure Isolation:**
+  - If the model artifact is missing or corrupted at startup, the Server logs a prominent warning and falls back to deterministic rule-based evaluation alone, preventing application boot failure.
 
-### 16.5 Explainability Generation
-Alongside the integer score, the AI generates a structured array of contributing factors formatted as:
+### 16.5 Explainability Generation & Human-in-the-Loop Contract
+Alongside the composite risk score $R$, the AI module produces a structured list of contributing factors for display in the Auditor interface:
+
 ```json
 [
   {
@@ -1006,7 +1056,6 @@ Alongside the integer score, the AI generates a structured array of contributing
     "name": "Financial-Physical Mismatch",
     "severity": "HIGH",
     "metric_observed": "Financial: 80%, Physical: 35%",
-    "threshold_delta": "+45%",
     "narrative": "Financial utilization exceeds physical progress by 45 percentage points, exceeding the allowable tolerance margin."
   },
   {
@@ -1018,6 +1067,9 @@ Alongside the integer score, the AI generates a structured array of contributing
   }
 ]
 ```
+
+> **Mandatory AI Disclaimer (CR-04 / FRD-BR-24):**  
+> The AI module provides decision-support risk indicators and explanatory narratives to assist human Auditors. It **never freezes funds, halts workflows, or claims to prove legal fraud or corruption**. All formal audit findings, escalations, and outcomes remain exclusively human determinations made by the Auditor (ACT-05).
 
 ---
 
@@ -1040,26 +1092,38 @@ sequenceDiagram
     Server->>DB: Update FundRelease status to Approved
     Server->>Chain: Submit FundReleaseApproved Tx
     Chain-->>Server: Transaction Receipt Confirmed
-    Server->>Server: Enqueue AI Risk Analysis Task
+    Server->>Server: Enqueue AI Risk Analysis Task (BackgroundTasks)
     Server-->>Admin: 200 OK (Lifecycle Action Complete)
 
-    Note over BG: Asynchronous Execution (Non-Blocking)
+    Note over BG: Asynchronous In-Process Execution (Non-Blocking)
     BG->>DB: Query Latest Features (Progress, Utilization, Dates)
     BG->>BG: Evaluate Rules + Run Isolation Forest
-    alt Risk Score >= 65 (Threshold Crossed)
+    alt Risk Score >= AI_RISK_THRESHOLD (Threshold Crossed)
         BG->>DB: Insert AIFlag (Status: Open)
         BG->>Chain: Submit AIAnomalyRecorded Tx
         BG->>DB: Insert Notification for ACT-05
         Auditor->>Server: Polls /notifications (Receives Alert)
-    else Risk Score < 65
-        BG->>DB: Insert Audit Analysis Log (Internal Only)
+    else Risk Score < AI_RISK_THRESHOLD
+        BG->>DB: Insert Audit Analysis Log (Internal Diagnostic)
     end
 ```
 
-### 17.2 Error Isolation and Resilience
-- If the AI task throws an unhandled exception (e.g. data feature parsing error or numerical error), the exception is caught and logged to Server error logs.
-- The completed fund release approval or milestone creation is **never rolled back**.
-- No visible error is shown to the user who triggered the lifecycle action.
+### 17.2 FastAPI BackgroundTasks Operational Boundaries & Limitations
+While FastAPI `BackgroundTasks` is appropriate and sufficient for this single-process academic prototype, its operational limitations are explicitly documented:
+1. **In-Process Lifecycle:** `BackgroundTasks` executes in-process inside the FastAPI Server ASGI event loop and threadpool.
+2. **Non-Durable Execution:** It is **not** a durable, persistent external message queue. If the Server process terminates, restarts, or crashes while a background AI task is queued or executing, the task is lost.
+3. **Architectural Scope Boundary:** Dedicated external message brokers and distributed task runners (such as Celery, Redis, RabbitMQ, Kafka) are **intentionally out of scope** for this academic prototype.
+4. **Independence of Core Transactions:** An AI background task failure or server interruption **never** invalidates, rolls back, or corrupts an already-confirmed core lifecycle transaction (e.g. fund release approval or milestone update).
+5. **Diagnostic Logging:** All background execution failures are caught and logged with structured error details and stack traces for technical diagnosis.
+
+### 17.3 AI Failure Behavior and Blockchain Event Integrity
+If AI risk analysis fails (e.g. database query timeout, feature extraction anomaly, missing model artifact, or numerical exception):
+- **Core Lifecycle Integrity:** The confirmed lifecycle transaction (fund release, milestone definition, etc.) remains fully valid and immutable.
+- **Diagnostic Logging:** The failure is logged with complete traceback for administrative inspection.
+- **No Fabricated State:** No `AIFlag` record is created in PostgreSQL.
+- **No Fabricated Blockchain Event:** No `AIAnomalyRecorded` transaction is submitted to the blockchain.
+- **No False Notifications:** No alert notification is dispatched to the Auditor.
+- **Reprocessing Capability:** Failed analyses may be retried or reprocessed if manual diagnostic triggers are provided by the implementation, without risking blockchain or database corruption.
 
 ---
 
@@ -1118,8 +1182,8 @@ Validation rules defined in FRD v1.0.1 (VR-01 through VR-20) are enforced across
 1. **Client Tier (Zod schemas):** Provides instant interactive feedback, disables invalid submissions, and prevents unnecessary network round-trips.
 2. **Server Tier (Pydantic v2 schemas):** Authoritative validation boundary. All inputs are re-validated before execution. Bypassing client validation results in `422 Unprocessable Entity`.
 
-### 20.2 Distributed Non-Atomic Consistency Flow
-Because PostgreSQL and Hardhat do not share an atomic distributed transaction coordinator, consistency is achieved through strict sequential orchestration:
+### 20.2 Coordinated Consistency Protocol and Finalization Flow
+Because PostgreSQL and the local Hardhat blockchain do not participate in a distributed atomic transaction coordinator, system consistency is maintained through a coordinated sequential consistency protocol:
 
 ```mermaid
 flowchart TD
@@ -1139,20 +1203,35 @@ flowchart TD
 
 ## 21. Error Handling and Recovery
 
-### 21.1 Standardized Error Response Contract
-All error responses adhere to RFC 7807 problem details JSON format:
+### 21.1 Standardized Error Response Contract (RFC 7807 Problem Details)
+All API error responses strictly adhere to the **RFC 7807 Problem Details** specification (`application/problem+json`), utilizing standard RFC fields alongside documented project-specific extension members:
+
 ```json
 {
+  "type": "https://errors.publicfunds.local/resource-conflict",
+  "title": "Resource Conflict",
+  "status": 409,
+  "detail": "A fund release request is already active for this milestone.",
+  "instance": "/api/v1/fund-releases",
   "error_code": "RESOURCE_CONFLICT",
-  "message": "A fund release request is already active for this milestone.",
   "timestamp": "2026-09-28T14:30:00Z",
-  "path": "/api/v1/fund-releases",
   "details": {
-    "milestoneId": "ms_01HQZ9G81N4V7K002M3B1K9P8Q",
-    "activeReleaseId": "rel_01HQZ9J51N4V7K002M3B1K9ABC"
+    "milestone_id": "550e8400-e29b-41d4-a716-446655440000",
+    "active_release_id": "7a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d"
   }
 }
 ```
+
+- **RFC 7807 Standard Members:**
+  - `type` (string URI): Canonical URI reference identifying the problem type.
+  - `title` (string): Short, human-readable summary of the problem type (remains constant across occurrences).
+  - `status` (integer): HTTP status code generated by the origin server for this occurrence.
+  - `detail` (string): Human-readable explanation specific to this occurrence.
+  - `instance` (string URI): URI reference identifying the specific endpoint/occurrence of the problem.
+- **Project Extension Members (Permitted by RFC 7807 §3.2):**
+  - `error_code` (string): Machine-readable internal application error code for Client programmatic handling.
+  - `timestamp` (string ISO-8601): Exact UTC timestamp of error generation.
+  - `details` (object, optional): Structured contextual payload containing field-level validation errors or conflicting entity IDs.
 
 ### 21.2 Error Taxonomy and Recovery Actions
 
@@ -1261,6 +1340,7 @@ PINATA_GATEWAY_URL=https://gateway.pinata.cloud/ipfs
 # ==========================================
 # AI / ML CONFIGURATION
 # ==========================================
+# Baseline demonstration threshold; empirical calibration deferred to AI/ML Design (FRD-DEF-09)
 AI_RISK_THRESHOLD=65
 AI_MODEL_PATH=../ml/models/isolation_forest.joblib
 
@@ -1300,7 +1380,7 @@ DEADLINE_CHECK_INTERVAL_MINUTES=60
    - Mocha + Chai with Hardhat Network.
    - 100% coverage of access modifiers, event emissions, and rejection logic for all 10 lifecycle events.
 2. **Server API & Business Logic (`backend/tests`):**
-   - Pytest with `httpx.AsyncClient` and in-memory/test PostgreSQL instance.
+   - Pytest with `httpx.AsyncClient` and isolated local PostgreSQL test database (or dedicated test schema).
    - Comprehensive test fixtures for seeded users, mock Pinata client, and mock Web3 provider.
 3. **AI/ML Validation (`backend/tests/test_ai.py`):**
    - Unit tests verifying deterministic score calculations across edge feature combinations.
@@ -1318,10 +1398,14 @@ Consistent with academic prototype guidelines, hard real-time latency SLAs are n
 - Up to approximately **500 fund release records**.
 - Concurrent demonstration users: 1 to 5 active browser sessions.
 
-### 27.2 Responsiveness Guidelines (P95 Benchmarks)
-- **Standard REST API reads/writes (PostgreSQL):** < 300 ms.
-- **Blockchain transaction confirmation (Hardhat local automine):** < 1500 ms.
-- **IPFS document pinning (Pinata REST):** < 3500 ms (subject to local internet bandwidth).
+### 27.2 Technical Performance Guidelines (Representative Demonstration Conditions)
+
+> **Engineering Guidance Note:**  
+> The latency metrics below are **technical performance guidelines for representative local demonstration conditions**, not hard product acceptance criteria or production service-level agreements (SLAs). In accordance with PRD v1.1.0, the platform avoids hard latency commitments. Actual observed performance will vary depending on host hardware, operating system, browser engine, local PostgreSQL throughput, Hardhat local automining speed, Pinata/IPFS network bandwidth, dataset volume, and dev server hot-reload states.
+
+- **Standard REST API reads/writes (PostgreSQL):** < 300 ms (guideline target).
+- **Blockchain transaction confirmation (Hardhat local automine):** < 1500 ms (guideline target).
+- **IPFS document pinning (Pinata REST):** < 3500 ms (guideline target; bandwidth dependent).
 - **Asynchronous AI risk inference:** Background execution completes within 2 to 5 seconds following lifecycle action without holding HTTP response.
 - **Client Initial Page Load:** < 2.0 seconds on local development server.
 
@@ -1357,12 +1441,12 @@ Consistent with academic prototype guidelines, hard real-time latency SLAs are n
 | **TD-01** | PDQ-02 / FRD-DEF-01 | Scheduled Milestone Check Interval | Set to **60 minutes** baseline; configurable down to **1 minute** for live testing/viva demonstration via `.env`. |
 | **TD-02** | PDQ-03 / FRD-DEF-02 | AI Execution Model | Asynchronous in-process execution via FastAPI `BackgroundTasks`. Fast HTTP response; AI failures do not abort lifecycle actions. |
 | **TD-03** | PDQ-04 / FRD-DEF-03 | Blockchain Signing Model | **Hybrid Model:** Server relayer wallet signs admin/system events; browser wallet signs Contractor release requests and Auditor findings. |
-| **TD-04** | PDQ-08 / FRD-DEF-04 | JWT Token Expiration & Revocation | Access token expiry set to **60 minutes**; stateless JWT validation; re-login required upon expiry. |
+| **TD-04** | PDQ-08 / FRD-DEF-04 | JWT Token Expiration & Authoritative Role-Check Architecture | Access token expiry set to **60 minutes**; Server strictly re-verifies user active status and authoritative role against PostgreSQL on every protected request, ensuring Platform Admin role changes take immediate effect on subsequent requests even with unexpired JWTs. Re-login required upon expiry; no token blacklist needed. |
 | **TD-05** | FRD-DEF-05 | Supported Document MIME & Size | MIME types restricted to **PDF, JPEG, PNG**. Max file size enforced at **15 MB**. |
 | **TD-06** | FRD-DEF-06 | Database Schema & Constraints | 11 core tables specified with explicit constraints, foreign keys, indexes, and field types in §9. |
-| **TD-07** | FRD-DEF-07 | Server REST API Contract | Structured JSON REST API defined with 35+ endpoints, standard HTTP verbs, and RFC 7807 error schemas in §10. |
-| **TD-08** | FRD-DEF-08 | Smart Contract Interface & Events | 10 confirmed event signatures, state structs, and `PublicFundTracker.sol` function signatures defined in §11 & §12. |
-| **TD-09** | FRD-DEF-09 | AI Feature Weights & Hyperparameters | 5 features, composite weighting formula ($0.30, 0.20, 0.20, 0.15, 0.15$), and Isolation Forest hyperparameters set in §16. |
+| **TD-07** | FRD-DEF-07 | Server REST API Contract | Structured JSON REST API defined with 35+ endpoints, standard HTTP verbs, and RFC 7807 error schemas in §10 & §21. |
+| **TD-08** | FRD-DEF-08 | Smart Contract Interface & Events | 10 confirmed event signatures, state structs, OpenZeppelin 5.x Ownable constructor, and `PublicFundTracker.sol` function signatures defined in §11 & §12. |
+| **TD-09** | FRD-DEF-09 (Partial / Execution Architecture) | AI Execution Architecture & Technical Interface | In-process hybrid model interface, async BackgroundTasks execution, input/output schemas, 0-100 risk score concept, configurable threshold, and error isolation defined in §16 & §17. Detailed model hyperparameters, feature weighting formulas, and calibration are deferred to AI/ML Design. |
 | **TD-10** | FRD-DEF-10 | IPFS Gateway Resolution | Direct Pinata dedicated gateway URL with fallback to public gateway in §15. |
 
 ### 29.2 Technical Assumptions
@@ -1372,12 +1456,13 @@ Consistent with academic prototype guidelines, hard real-time latency SLAs are n
 - **T-ASS-04:** Single active fund release request per milestone (`FRD-ASS-01`) is enforced by checking milestone active release status before insert.
 
 ### 29.3 Items Deferred to Downstream Artifacts
+- **Deferred to AI/ML Design Document (FRD-DEF-09):** Isolation Forest detailed hyperparameters (n_estimators, contamination, random_state), detailed feature set formulas and transformations, training pipeline specification, and validation-based risk calibration against the approved synthetic/semi-synthetic dataset from the Project Definition.
 - **Deferred to System Architecture Document (`docs/04-SYSTEM-ARCHITECTURE.md`):** Detailed sequence diagrams, process thread models, network port topologies, and physical deployment specs.
-- **Deferred to UI/UX Design (`docs/05-UI-UX-DESIGN.md`):** Complete screen wireframes, component component trees, typography hierarchies, design system color codes, and responsive layouts.
+- **Deferred to UI/UX Design (`docs/05-UI-UX-DESIGN.md`):** Complete screen wireframes, component trees, typography hierarchies, design system color codes, and responsive layouts.
 - **Deferred to Implementation Plan (`docs/06-IMPLEMENTATION-PLAN.md`):** Phase-by-phase development sprint tasks, file scaffolding sequence, and verification milestones.
 
 ---
 
-*End of Document — TRD v1.0.0*
+*End of Document — TRD v1.0.1*
 
-*This TRD is based on the approved Project Definition v0.3.0, PRD v1.1.0, and FRD v1.0.1. It is a draft pending review. No application implementation code or project scaffolding shall begin until this TRD is formally reviewed and approved.*
+*This TRD is based on the approved Project Definition v0.3.0, PRD v1.1.0, and FRD v1.0.1. It is a draft for final review. No application implementation code or project scaffolding shall begin until this TRD is formally reviewed and approved and an Implementation Plan has been confirmed.*
