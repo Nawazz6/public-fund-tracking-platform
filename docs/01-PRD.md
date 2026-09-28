@@ -2,7 +2,7 @@
 
 **Document Type:** Product Requirements Document (PRD)
 **Project:** AI Powered Decentralized Public Fund Tracking and Fraud Detection Platform
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Status:** DRAFT — PENDING REVIEW
 **Date (created):** 2026-09-28
 **Date (last updated):** 2026-09-28
@@ -15,6 +15,7 @@
 
 | Version | Date | Author | Summary |
 |---|---|---|---|
+| 1.1.0 | 2026-09-28 | AI Engineering Agent | Scope cleanup revision to defer implementation details to downstream design documents and align documentation structure. |
 | 1.0.0 | 2026-09-28 | AI Engineering Agent | Initial PRD created from approved Project Definition v0.3.0. All 29 confirmed requirements (CR-01–CR-29) incorporated. |
 
 ---
@@ -680,11 +681,11 @@ The Server event listener shall maintain consistency between the blockchain even
 *Traces to: CR-18*
 
 ### NFR-09 — Performance: Page Load
-All primary authenticated dashboard views (project list, project detail, Auditor queue) shall load within 3 seconds under local demo conditions with representative demo data (≤50 projects, ≤500 fund release events).
+All primary authenticated dashboard views (project list, project detail, Auditor queue) shall exhibit reasonable responsiveness expectations under representative demo conditions with representative demo data (≤50 projects, ≤500 fund release events).
 *Traces to: CR-08*
 
 ### NFR-10 — Performance: AI Analysis Latency
-AI risk analysis triggered by a lifecycle event shall complete within 10 seconds for a single project under demo data conditions. Longer-running analysis shall not block the Server's response to the triggering API call (i.e., AI analysis shall be asynchronous with respect to the HTTP response where necessary).
+AI risk analysis triggered by a lifecycle event shall exhibit reasonable responsiveness expectations under representative demo conditions. Exact async/background execution mechanism shall be deferred to the TRD/System Architecture. Longer-running analysis shall not block the Server's response to the triggering API call.
 *Traces to: CR-21*
 
 ### NFR-11 — Usability: Role-Specific UX
@@ -816,7 +817,7 @@ All ten confirmed event types shall be emitted by the Solidity contracts:
 
 - **Solidity events** → immutable, tamper-evident audit history. All 10 event types above shall use Solidity events.
 - **Minimal persistent contract state** → used only for Server-side validation (e.g., confirming a project exists and is Active before accepting new events). Do NOT duplicate the PostgreSQL database on-chain.
-- Exact Solidity structs, mappings, function signatures, and event parameters shall be defined in the Blockchain Design document.
+- Exact Solidity structs, mappings, function signatures, and event parameters shall be deferred to the TRD and System Architecture.
 
 ### 10.4 Server-Side Event Indexing
 
@@ -863,7 +864,7 @@ Documents stored on IPFS include: contractor invoices, site photographs, bills o
 ### 11.5 Privacy Limitation (Documented)
 
 Documents uploaded to IPFS are **unencrypted** in this academic project version. Any person who obtains a CID can access the document via a public IPFS gateway. This limitation shall be:
-- Clearly documented in the Technical Requirements Document (TRD) and Security Design document.
+- Clearly documented in the Technical Requirements Document (TRD) and System Architecture document.
 - Acknowledged in viva presentation materials.
 - Displayed as a notice in the Client where relevant (e.g., on the evidence upload screen).
 
@@ -1033,7 +1034,7 @@ All interactive views shall implement: **loading state** (skeleton or spinner), 
 
 ### 15.1 Operational Data (PostgreSQL)
 
-The following data entities are required at the product level (schema definition is a TRD/Data Design responsibility):
+The following data entities are required at the product level (schema definition is a TRD and System Architecture responsibility):
 
 | Entity | Description |
 |---|---|
@@ -1159,33 +1160,33 @@ The following product-level acceptance criteria define what a successful MVP dem
 
 | Confirmed Req. | Description (Summary) | PRD Functional Req(s) | Product Module(s) | Next Document |
 |---|---|---|---|---|
-| CR-01 | Fund lifecycle tracking | FR-020–024, FR-030–034, FR-040–045, FR-050–055, FR-060–063 | MOD-03, MOD-04, MOD-05, MOD-06, MOD-07 | FRD, Data Design |
-| CR-02 | Blockchain tamper-evident audit trail (10 event types) | FR-080–085 | MOD-09 | Blockchain Design, TRD |
-| CR-03 | IPFS document storage; CIDs on-chain and in DB | FR-070–074 | MOD-08 | TRD, IPFS Design |
+| CR-01 | Fund lifecycle tracking | FR-020–024, FR-030–034, FR-040–045, FR-050–055, FR-060–063 | MOD-03, MOD-04, MOD-05, MOD-06, MOD-07 | FRD, System Architecture |
+| CR-02 | Blockchain tamper-evident audit trail (10 event types) | FR-080–085 | MOD-09 | System Architecture, TRD |
+| CR-03 | IPFS document storage; CIDs on-chain and in DB | FR-070–074 | MOD-08 | TRD, System Architecture |
 | CR-04 | AI detects anomalous patterns; does not prove fraud | FR-090–098 | MOD-10 | AI/ML Design |
-| CR-05 | PostgreSQL stores all operational data; blockchain does not replace it | FR-080, FR-081, §15 | MOD-04, MOD-09 | Data Design, TRD |
+| CR-05 | PostgreSQL stores all operational data; blockchain does not replace it | FR-080, FR-081, §15 | MOD-04, MOD-09 | System Architecture, TRD |
 | CR-06 | Six actor roles | FR-010–014, §4 | MOD-02 | FRD |
 | CR-07 | Citizen no-login; all others JWT | FR-001–006, FR-130–135 | MOD-01, MOD-14 | FRD |
 | CR-08 | End-to-end functional and demonstrable | AC-01–AC-23, NFR-09–NFR-21 | All | Testing Plan |
 | CR-09 | Client: modern, professional, visually polished | §14, NFR-11–NFR-15 | Client | UI/UX Design |
 | CR-10 | Documentation-first process | (this document) | N/A | FRD |
-| CR-11 | No production-scale complexity | §3 (Non-Goals) | N/A | Architecture |
-| CR-12 | Large documents on IPFS; CIDs on-chain | FR-070–074, FR-080 | MOD-08, MOD-09 | Blockchain Design |
+| CR-11 | No production-scale complexity | §3 (Non-Goals) | N/A | System Architecture |
+| CR-12 | Large documents on IPFS; CIDs on-chain | FR-070–074, FR-080 | MOD-08, MOD-09 | System Architecture |
 | CR-13 | AI provides explainable contributing factors | FR-093, FR-097, FR-098 | MOD-10 | AI/ML Design |
-| CR-14 | Physical progress % and financial utilization % are separate | FR-031, FR-060–063, FR-140 | MOD-07, MOD-04 | FRD, Data Design |
+| CR-14 | Physical progress % and financial utilization % are separate | FR-031, FR-060–063, FR-140 | MOD-07, MOD-04 | FRD, System Architecture |
 | CR-15 | Partial fund releases per milestone | FR-034, FR-050 | MOD-06, MOD-04 | FRD |
 | CR-16 | Contractor resubmission; rejected requests retained | FR-033, FR-054, FR-055 | MOD-06, MOD-04 | FRD |
-| CR-17 | Auditors record audit findings on-chain | FR-103–105 | MOD-11 | Blockchain Design, FRD |
-| CR-18 | Server-side blockchain event listener indexes to PostgreSQL | FR-081 | MOD-09 | TRD, Blockchain Design |
-| CR-19 | Platform demonstrable on local Hardhat | FR-085, NFR-20 | MOD-09 | Architecture, Blockchain Design |
+| CR-17 | Auditors record audit findings on-chain | FR-103–105 | MOD-11 | System Architecture, FRD |
+| CR-18 | Server-side blockchain event listener indexes to PostgreSQL | FR-081 | MOD-09 | TRD, System Architecture |
+| CR-19 | Platform demonstrable on local Hardhat | FR-085, NFR-20 | MOD-09 | System Architecture |
 | CR-20 | JWT app auth; wallet separate and only for on-chain writes | FR-001–006 | MOD-01 | TRD |
 | CR-21 | AI event-triggered; runs within Server | FR-090, FR-091 | MOD-10 | AI/ML Design, TRD |
 | CR-22 | AI data: synthetic/semi-synthetic | FR-099, NFR-21 | MOD-10 | AI/ML Design |
-| CR-23 | IPFS documents unencrypted; limitation documented | FR-074, NFR-05 | MOD-08 | TRD, Security Design |
-| CR-24 | Monorepo: frontend/, backend/, contracts/, ml/, docs/, data/ | NFR-17 | N/A | Architecture |
+| CR-23 | IPFS documents unencrypted; limitation documented | FR-074, NFR-05 | MOD-08 | TRD, System Architecture |
+| CR-24 | Monorepo: frontend/, backend/, contracts/, ml/, docs/, data/ | NFR-17 | N/A | System Architecture |
 | CR-25 | Server-side missed milestone detection | FR-041–044 | MOD-05 | FRD, TRD |
 | CR-26 | Formal Government Admin → Auditor escalation workflow | FR-110–114 | MOD-12 | FRD |
-| CR-27 | Solidity events + minimal contract state; no DB duplication | FR-084 | MOD-09 | Blockchain Design |
+| CR-27 | Solidity events + minimal contract state; no DB duplication | FR-084 | MOD-09 | System Architecture |
 | CR-28 | AI calibration: validation-based thresholds; no fixed FPR | FR-099 | MOD-10 | AI/ML Design |
 | CR-29 | Dark mode (light + dark + system preference via Tailwind/shadcn/ui) | §14.3 | Client | UI/UX Design |
 
@@ -1214,18 +1215,9 @@ The following are genuinely new questions that emerged from writing this PRD. Th
 **PDQ-05 — FRD Question: Government Admin project completion authorization**
 *FR-N identifies project completion as an ACT-02 or ACT-03 action "with appropriate authorization." The FRD must specify the exact rule: who can mark a project as Completed, and what conditions must be met (e.g., all milestones completed, no pending fund releases)?*
 
-**PDQ-06 — UI/UX Design Question: Public portal AI flag visibility**
-*FR-135 specifies that internal AI flag details are not exposed on the public portal. However, should the public portal show any aggregated, anonymized indicator (e.g., "This project has active audit flags")? This is a UX and transparency policy decision for the UI/UX Design phase.*
-
-**PDQ-07 — FRD Question: ACT-01 project visibility**
-*Platform Admin (ACT-01) manages users but "does not participate in project fund workflows." Should ACT-01 have read-only visibility into all projects for system administration purposes, or is ACT-01 strictly limited to user management? The FRD must clarify ACT-01's view permissions.*
-
-**PDQ-08 — TRD Question: JWT token revocation for role changes**
-*If ACT-01 changes a user's role, the current JWT already issued to that user will still encode the old role until it expires. The TRD must decide whether to implement token blacklisting, short expiry windows, or another mechanism to ensure role changes take effect promptly.*
-
 ---
 
-*End of Document — PRD v1.0.0*
+*End of Document — PRD v1.1.0*
 
 *This PRD is based on the approved Project Definition v0.3.0. It is a draft pending review. No application code, scaffolding, or dependency installation shall begin until this PRD is reviewed and the subsequent FRD is approved.*
 
